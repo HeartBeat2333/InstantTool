@@ -1,0 +1,8 @@
+<resources>
+    <!-- configuration for InstantTool -->
+    <dimen name="intantTool_radius">90dp</dimen>
+    <dimen name="intantTool_button_length">55dp</dimen>
+    <dimen name="intantTool_button_padding">7dp</dimen>
+    <dimen name="intantTool_button_fontSize">20sp</dimen>
+
+</resources>
