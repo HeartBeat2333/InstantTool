@@ -1,6 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <color name="gray_circle">#66c2c2c2</color>
-  <color name="transparent_white">#AFFFFFFF</color>
   <color name="instanttool_bg">#000000</color>
 </resources>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="InstantToolLayout">
+        <attr name="centerIcon" format="reference"/>
+        <attr name="buttonNum" format="integer"/>
+        <attr name="radius" format="dimension|reference"/>
+        <attr name="buttonSize" format="dimension|reference"/>
+        <!--<attr name="showSwitch" format="boolean"/>-->
+        <!--<attr name="textSize" format="dimension|reference"/>-->
+        <!--<attr name="textColor" format="color|reference"/>-->
+    </declare-styleable>
+</resources>
