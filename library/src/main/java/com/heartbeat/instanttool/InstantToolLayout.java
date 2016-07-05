@@ -10,10 +10,13 @@ import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Message;
+import android.os.SystemClock;
 import android.util.AttributeSet;
-import android.view.GestureDetector;
+import android.util.Log;
 import android.view.MotionEvent;
-import android.widget.Button;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.LinearLayout;
 
 import java.util.ArrayList;
@@ -23,7 +26,9 @@ import java.util.ArrayList;
  */
 public class InstantToolLayout extends LinearLayout {
     private static final String TAG = "InstantToolLayout";
+    private static final int MSG_PICK_BUTTON = 10000;
     private static final int MAX_BUTTON_NUM = 5; // 最大按钮数量
+    private static final int MIN_BUTTON_NUM = 0; // 最小按钮数量
 
     private Context mContext;
     private boolean isButtonsShown;
@@ -34,7 +39,9 @@ public class InstantToolLayout extends LinearLayout {
 
     private int mBackgrounColor;
     private int mButtonDpSize;
-//    private int mButtonPadding;
+    private int mButtonPadding;
+    private int mTextSize;
+    private int mTextColor;
 
     private float mAlpha; // 当前透明度
     private Rect mLimitRect;
@@ -45,29 +52,43 @@ public class InstantToolLayout extends LinearLayout {
     private Drawable mCenterCircle;
     private Paint mPaint;
     private Paint mBackgroundPaint;
-    private GestureDetector mGestureDetector;
+
+    private float mProgress;
+    private ShowAnimation mAnimation;
+
+    private boolean isHandle;
+    private Box mCurrentBox;
+    private Handler mHandler;
 
     private class Box { // button容器
         public InstantButton button;
         public Rect target;
         public Point targetPoint;
+        public int slotIndex;
 
-        public Box() {
-            button = new InstantButton(mContext);
-//            button.setBackgroundColor(Color.BLUE);
-//            button.setText("111");
-//            button.setTextPane(mTextPanel);
+        public Box(int index) {
+            slotIndex = index;
+
+            button = new InstantButton(mContext) {
+                @Override
+                public void invalidateButton() {
+                    invalidate();
+                }
+            };
+
+            if(mButtonPadding > 0) {
+                button.setPadding(mButtonPadding, mButtonPadding, mButtonPadding, mButtonPadding);
+            }
+            button.setTextSize(mTextSize);
+            button.setTextColor(mTextColor);
             target = new Rect();
             targetPoint = new Point();
-//
-//            if(mButtonListener != null)
-//                mButtonListener.onInitButton(button.getId(), button);
         }
     }
 
     public interface InstantToolButtonListener {
-        void onInitButton(Button button);
-        void onItemButtonChecked(Button button, int slotIndex);
+        void onShowButton(InstantButton button, int slotIndex);
+        void onItemButtonChecked(InstantButton button, int slotIndex);
     }
 
     public InstantToolLayout(Context context) {
@@ -93,7 +114,6 @@ public class InstantToolLayout extends LinearLayout {
 
     private void init(Context context, AttributeSet attrs) {
         mContext = context;
-        mGestureDetector = new GestureDetector(mContext, myGestureListener);
 
         mPaint = new Paint();
         mPaint.setColor(Color.RED);// 设置红色
@@ -110,33 +130,54 @@ public class InstantToolLayout extends LinearLayout {
         mCurrentBtnNum = typedArray.getInteger(R.styleable.InstantToolLayout_buttonNum, 0);
         mButtonRadius = typedArray.getDimensionPixelSize(R.styleable.InstantToolLayout_radius, 0);
         mButtonDpSize = typedArray.getDimensionPixelSize(R.styleable.InstantToolLayout_buttonSize, 0);
-//        mButtonPadding = context.getResources().getDimensionPixelSize(R.dimen.intantTool_button_padding);
-//        mTextPanel = new NinePatchTexture(mContext, R.drawable.panel_undo_holo);;
+        mButtonPadding = typedArray.getDimensionPixelSize(R.styleable.InstantToolLayout_buttonPadding, 0);
+        mTextSize = typedArray.getDimensionPixelSize(R.styleable.InstantToolLayout_textSize, 0);
+        mTextColor = typedArray.getColor(R.styleable.InstantToolLayout_textColor, 0);
+
+        mCurrentBtnNum = Utils.clamp(mCurrentBtnNum, MIN_BUTTON_NUM, MAX_BUTTON_NUM);
+
         mCenterPoint = new Point();
-        initBoxs();
+        initBox();
         setWillNotDraw(false);
 
+        mHandler = new Handler() {
+            @Override
+            public void handleMessage(Message msg) {
+                switch (msg.what) {
+                    case MSG_PICK_BUTTON:
+                        if(mButtonListener != null && mCurrentBox != null) {
+                            Log.i(TAG, "MSG_PICK_BUTTON");
+                            mButtonListener.onItemButtonChecked(mCurrentBox.button, mCurrentBox.slotIndex);
+                            mCurrentBox = null;
+                        }
+                        break;
+                    default :
+                        throw new AssertionError(msg.what);
+                }
+            }
+        };
     }
 
-    private void initBoxs() {
+    private void initBox() {
         for(int i = 0; i < mCurrentBtnNum; i++) {
-            Box box = new Box();
+            Box box = new Box(i);
             mBoxPool.add(box);
         }
     }
 
-    private void showButtons(MotionEvent e) {
+    public void showButtons(MotionEvent e) {
+        isHandle = true;
         if(!isButtonsShown) {
-            setCenterPointAndInitBox((int) e.getX(), (int) e.getY());
-            isButtonsShown = true;
-            invalidate();
-        }
-    }
-
-    private void hideButtons() {
-        if(isButtonsShown) {
-            isButtonsShown = false;
-            invalidate();
+            int[] locationOnScreen = new int[2];
+            getLocationOnScreen(locationOnScreen);
+            setCenterPointAndInitBox((int) e.getRawX() - locationOnScreen[0], (int) e.getRawY() - locationOnScreen[1]);
+            if(mButtonListener != null) {
+                for(Box box : mBoxPool) {
+                    box.button.layout(box.target.left, box.target.top, box.target.right, box.target.bottom);
+                    mButtonListener.onShowButton(box.button, box.slotIndex);
+                }
+            }
+            startShowAnimation();
         }
     }
 
@@ -167,13 +208,18 @@ public class InstantToolLayout extends LinearLayout {
         mLimitRect = new Rect(left + width, top + height, right - width, bottom -  height);
     }
 
+    /**
+     * 设置点击位置，初始化按钮位置
+     * @param x
+     * @param y
+     */
     public void setCenterPointAndInitBox(int x, int y) {
         mCenterPoint = getCenterPointByRectLimit(mCenterPoint, x, y);
         initBoxesTargetRect();
     }
 
     /**
-     * 从限制区域内获取中心点
+     * 判断点击位置是否在限制区域内， 限制区域根据中心按钮大小获得
      * @param x
      * @param y
      */
@@ -190,9 +236,8 @@ public class InstantToolLayout extends LinearLayout {
         int i = 0;
         for(Box box : mBoxPool) {
             // TODO 初始化按钮状态
-//            box.button.setScale(1.0f);
-//            box.button.isPressed = false;
-//            box.button.setTextVisible(false);
+            box.button.setScale(1.0f);
+            box.button.isPressed = false;
             // 设置目标矩形
             initBoxTargetRect(box, startAngle, i);
             i++;
@@ -230,6 +275,7 @@ public class InstantToolLayout extends LinearLayout {
         // 根据角和半径计算出box中心点
         int x = mCenterPoint.x - (int)(mButtonRadius * Math.cos(Math.toRadians(currentAngle)));
         int y = mCenterPoint.y - (int)(mButtonRadius * Math.sin(Math.toRadians(currentAngle)));
+        // 防止点击按钮显示超过屏幕边界
         int boxHalfWidth = mButtonDpSize / 2;
         int boxHalfHeight = mButtonDpSize / 2;
         box.target.set(x - boxHalfWidth, y - boxHalfHeight, x + boxHalfWidth, y + boxHalfHeight);
@@ -245,18 +291,59 @@ public class InstantToolLayout extends LinearLayout {
     @Override
     public void draw(Canvas canvas) {
         super.draw(canvas);
-
+        long animTime = SystemClock.uptimeMillis();
+        ShowAnimation anim = mAnimation;
+        boolean more = false;
+        if (anim != null) {
+            more |= anim.calculate(animTime);
+            if(!anim.isActive()) {
+                mAnimation = null;
+                if(anim.getType() == ShowAnimation.HIDING) {
+                    isButtonsShown = false;
+                }
+            }
+            mProgress = anim.get();
+        }
         if(isButtonsShown) {
             renderBackground(canvas);
             canvas.save(Canvas.MATRIX_SAVE_FLAG | Canvas.HAS_ALPHA_LAYER_SAVE_FLAG);
+
+            if(anim != null && anim.getType() == ShowAnimation.HIDING) {
+                // 消失时往中心收缩
+//                canvas.setAlpha(mProgress);
+                canvas.translate(mCenterPoint.x, mCenterPoint.y);
+                canvas.scale(mProgress, mProgress);
+                canvas.translate(-mCenterPoint.x, -mCenterPoint.y);
+            }
+
             drawCenterCircle(canvas);
             if(mBoxPool.size() > 0) {
-                for (Box box : mBoxPool) {
-//                    canvas.drawCircle(box.target.centerX(), box.target.centerY(), box.target.width() / 2, mPaint);// 小圆
+                // 根据点击x位置判断显示层级， 防止弹出文字被遮挡
+                if(mCenterPoint.x < getWidth() / 2) {
+                    for(int i = 0; i < size(); i++) {
+                        drawButtons(canvas, i);
+                    }
+                } else {
+                    for(int i = size() -1; i >= 0; i--) {
+                        drawButtons(canvas, i);
+                    }
                 }
             }
             canvas.restore();
         }
+
+        if (more)
+            invalidate();
+    }
+
+    private void drawButtons(Canvas canvas, int index) {
+        Box box = mBoxPool.get(index);
+        if (box.button == null)
+            return;
+        if (mAnimation != null  && mAnimation.isActive() && mAnimation.getType() == ShowAnimation.SHOWING) {
+            mAnimation.apply(canvas, box);
+        }
+        box.button.render(canvas, mProgress);
     }
 
     /**
@@ -265,8 +352,8 @@ public class InstantToolLayout extends LinearLayout {
      */
     protected void renderBackground(Canvas canvas) {
         canvas.save(Canvas.MATRIX_SAVE_FLAG | Canvas.HAS_ALPHA_LAYER_SAVE_FLAG);
-//        mAlpha = Utils.clamp(mProgress, 0.0f, 0.5f);
-        mBackgroundPaint .setAlpha(127);
+        mAlpha = Utils.clamp(mProgress, 0.0f, 0.5f);
+        mBackgroundPaint .setAlpha((int) (255 * mAlpha));
         canvas.drawRect(0, 0, getWidth(), getHeight(), mBackgroundPaint);
         canvas.restore();
     }
@@ -281,120 +368,129 @@ public class InstantToolLayout extends LinearLayout {
         w = mCenterCircle.getIntrinsicWidth();
         h = mCenterCircle.getIntrinsicHeight();
         canvas.save(Canvas.HAS_ALPHA_LAYER_SAVE_FLAG);
-//        if(mAnimation != null && mAnimation.getType() == ShowAnimation.SHOWING) {
-//            // 显示动画放大后缩小
-//            w = (int) (mCenterCircle.getWidth() + (1 - mProgress) * mCenterCircle.getWidth());
-//            h = (int) (mCenterCircle.getHeight() + (1 - mProgress) * mCenterCircle.getWidth());
-//        }
         x = mCenterPoint.x - w / 2;
         y = mCenterPoint.y - h / 2;
-//        mCenterCircle.draw(canvas, x, y, w, h);
         mCenterCircle.setBounds(x, y,  x + w, y + h);
+        mCenterCircle.setAlpha((int) (255 * mProgress));
         mCenterCircle.draw(canvas);
         canvas.restore();
     }
 
     // ---------------------------- Gesture --------------------------------------------
 
-    GestureDetector.OnGestureListener myGestureListener = new GestureDetector.OnGestureListener() {
-        @Override
-        public boolean onDown(MotionEvent e) {
-            return false;
-        }
-
-        @Override
-        public void onShowPress(MotionEvent e) {
-        }
-
-        @Override
-        public boolean onSingleTapUp(MotionEvent e) {
-            return false;
-        }
-
-        @Override
-        public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
-            return false;
-        }
-
-        @Override
-        public void onLongPress(MotionEvent e) {
-            showButtons(e);
-        }
-
-        @Override
-        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
-            return false;
-        }
-    };
-
     @Override
     public boolean onInterceptTouchEvent(MotionEvent event) {
-        mGestureDetector.onTouchEvent(event);
         switch (event.getAction() & MotionEvent.ACTION_MASK) {
-            case MotionEvent.ACTION_MOVE:
-//                for (Box box : mBoxPool) {
-//                    if(box.target.contains((int) event.getX(), (int) event.getY())) {
-//                        if(!box.button.isPressed()) {
-//                            box.button.setPressed(true);
-//                            mCurrentButton = box.button;
-//                        }
-//                    } else {
-//                        if(box.button.isPressed()) {
-//                            box.button.setPressed(false);
-//                            if(mCurrentButton == box.button) {
-//                                mCurrentButton = null;
-//                            }
-//                        }
-//                    }
-//                }
-//                invalidate();
-                break;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
             case MotionEvent.ACTION_POINTER_DOWN:
-                // 抬起时隐藏
-                if(isButtonsShown) {
-                    hideButtons();
-                }
-//                startHideAnimation();
-//                mHandler.sendMessageDelayed(mHandler.obtainMessage(MSG_PICK_BUTTON), 500);
+                isHandle = false;
+                startHideAnimation();
                 break;
         }
-        return isButtonsShown ? true : super.onInterceptTouchEvent(event);
+        return isHandle ? true : super.onInterceptTouchEvent(event);
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         switch (event.getAction() & MotionEvent.ACTION_MASK) {
             case MotionEvent.ACTION_MOVE:
-//                for (Box box : mBoxPool) {
-//                    if(box.target.contains((int) event.getX(), (int) event.getY())) {
-//                        if(!box.button.isPressed()) {
-//                            box.button.setPressed(true);
-//                            mCurrentButton = box.button;
-//                        }
-//                    } else {
-//                        if(box.button.isPressed()) {
-//                            box.button.setPressed(false);
-//                            if(mCurrentButton == box.button) {
-//                                mCurrentButton = null;
-//                            }
-//                        }
-//                    }
-//                }
-//                invalidate();
+                for (Box box : mBoxPool) {
+                    if(box.target.contains((int) event.getX(), (int) event.getY())) {
+                        if(!box.button.isPressed()) {
+                            box.button.setPressed(true);
+                            mCurrentBox = box;
+                        }
+                    } else {
+                        if(box.button.isPressed()) {
+                            box.button.setPressed(false);
+                            if(mCurrentBox == box) {
+                                mCurrentBox = null;
+                            }
+                        }
+                    }
+                }
                 break;
+            case MotionEvent.ACTION_DOWN:
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
             case MotionEvent.ACTION_POINTER_DOWN:
-                // 抬起时隐藏
-                if(isButtonsShown) {
-                    hideButtons();
-                }
-//                startHideAnimation();
-//                mHandler.sendMessageDelayed(mHandler.obtainMessage(MSG_PICK_BUTTON), 500);
+                isHandle = false;
+                startHideAnimation();
+                mHandler.sendMessageDelayed(mHandler.obtainMessage(MSG_PICK_BUTTON), 500);
                 break;
         }
         return super.onTouchEvent(event);
+    }
+
+    // ---------------------------- Animation --------------------------------------------
+    public void startShowAnimation() {
+        if (isButtonsShown) return;
+        if (mAnimation != null) {
+            mAnimation.forceStop();
+        }
+        isButtonsShown = true;
+        mAnimation = new ShowAnimation(ShowAnimation.SHOWING);
+        mAnimation.start();
+        invalidate();
+    }
+
+    public void startHideAnimation() {
+        if (!isButtonsShown) return;
+        if (mAnimation != null) {
+            mAnimation.forceStop();
+        }
+        mAnimation = new ShowAnimation(ShowAnimation.HIDING);
+        mAnimation.start();
+        invalidate();
+    }
+
+    private class ShowAnimation extends Animation {
+        private final float mFrom;
+        private final float mTo;
+        private float mCurrent;
+
+        public static final int SHOWING = 0;
+        public static final int HIDING = 1;
+        private final int mType;
+
+        public ShowAnimation(int type) {
+            mType = type;
+            if(type == SHOWING) {
+                mFrom = 0.0f;
+                mTo = 1.0f;
+            } else if(type == HIDING)  {
+                mFrom = 1.0f;
+                mTo = 0.0f;
+            } else {
+                mFrom = mTo = 0.0f;
+            }
+            mCurrent = mFrom;
+            setDuration(500);
+            setInterpolator(new DecelerateInterpolator(4));
+        }
+
+        @Override
+        protected void onCalculate(float progress) {
+            mCurrent = mFrom + (mTo - mFrom) * progress;
+        }
+
+        public int getType() {
+            return mType;
+        }
+
+        public float get() {
+            return mCurrent;
+        }
+
+        public void apply(Canvas canvas, Box box) {
+            int x = (int) (mCenterPoint.x - (mCenterPoint.x - box.targetPoint.x) * mCurrent);
+            int y = (int) (mCenterPoint.y - (mCenterPoint.y - box.targetPoint.y) * mCurrent);
+            int left = x - mButtonDpSize / 2;
+            int right = x + mButtonDpSize / 2;
+            int top = y - mButtonDpSize / 2;
+            int bottom = y + mButtonDpSize / 2;
+            box.button.layout(left, top, right, bottom);
+        }
     }
 }

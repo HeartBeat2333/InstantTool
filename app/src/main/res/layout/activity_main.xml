@@ -2,15 +2,20 @@
 <com.heartbeat.instanttool.InstantToolLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/il_tool"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     app:centerIcon="@drawable/circle_center"
     app:buttonNum="4"
     app:radius="90dp"
-    app:buttonSize="55dp">
+    app:buttonSize="55dp"
+    app:buttonPadding="7dp"
+    app:textSize="18dp"
+    app:textColor="@android:color/white">
 
     <android.support.v7.widget.RecyclerView
         android:id="@+id/rv_list"
         android:layout_width="match_parent"
         android:layout_height="match_parent"/>
+
 </com.heartbeat.instanttool.InstantToolLayout>
