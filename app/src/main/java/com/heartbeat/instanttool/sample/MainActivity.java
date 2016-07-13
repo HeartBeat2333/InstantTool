@@ -4,7 +4,6 @@ import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.RecyclerView;
 import android.support.v7.widget.StaggeredGridLayoutManager;
-import android.view.MotionEvent;
 import android.widget.Toast;
 
 import com.heartbeat.instanttool.InstantButton;
@@ -60,7 +59,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onItemButtonChecked(InstantButton button, int slotIndex) {
                 Toast.makeText(MainActivity.this
-                        , button.getText() + " image id ： " + mInstantTool.getTag().toString()
+                        , button.getText()
                         , Toast.LENGTH_SHORT)
                         .show();
             }
@@ -75,18 +74,10 @@ public class MainActivity extends AppCompatActivity {
         mRecyclerView.setLayoutManager(new StaggeredGridLayoutManager(2,
                 StaggeredGridLayoutManager.VERTICAL));
         mRecyclerView.setAdapter(mAdapter);
-        mAdapter.setLongListner(new ImageAdapter.OnItemLongSelectedListener() {
-            @Override
-            public void onItemLongSelected(MotionEvent e, int rid) {
-                mInstantTool.showButtons(e);
-                mInstantTool.setTag(rid);
-            }
-        });
     }
 
     private void initView() {
         mRecyclerView = (RecyclerView) findViewById(R.id.rv_list);
         mInstantTool = (InstantToolLayout) findViewById(R.id.il_tool);
     }
-
 }

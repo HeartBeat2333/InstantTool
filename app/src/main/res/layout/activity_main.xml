@@ -11,7 +11,7 @@
     app:buttonSize="55dp"
     app:buttonPadding="7dp"
     app:textSize="18dp"
-    app:textColor="@android:color/white">
+    app:textColor="@color/colorAccent">
 
     <android.support.v7.widget.RecyclerView
         android:id="@+id/rv_list"

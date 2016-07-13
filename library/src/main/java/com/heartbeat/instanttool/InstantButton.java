@@ -6,7 +6,6 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
-import android.util.Log;
 import android.view.animation.DecelerateInterpolator;
 
 /**
@@ -28,7 +27,7 @@ public abstract class InstantButton {
 
     private FloatAnimation mAnimation;
 
-    private Object tag;
+    private Object mTag;
 
 
     public Rect bounds() {
@@ -87,11 +86,11 @@ public abstract class InstantButton {
     }
 
     public Object getTag() {
-        return tag;
+        return mTag;
     }
 
     public void setTag(Object tag) {
-        this.tag = tag;
+        mTag = tag;
     }
 
     protected void render(Canvas canvas, float progress) {
@@ -101,8 +100,6 @@ public abstract class InstantButton {
         if (anim != null) {
             more |= anim.calculate(animTime);
             mScale = 1 + (float) mPadding * 2 / getWidth() * anim.get();
-            Log.i("InstantButton", "mPadding : " + mPadding);
-            Log.i("InstantButton", "scale : " + mScale);
             if(!anim.isActive()) {
                 mAnimation = null;
                 more |= false;
@@ -137,7 +134,7 @@ public abstract class InstantButton {
         // 绘制文字
         if (mText != null) {
             int textX = mBounds.left + (mBounds.width() - getTextWidth()) / 2;
-            int textY = mBounds.top - mPadding * 3;
+            int textY = mBounds.top - mPadding;
 
             canvas.save(Canvas.MATRIX_SAVE_FLAG);
             if(anim != null && isTextVisible) { // 文字缩放效果
@@ -169,6 +166,7 @@ public abstract class InstantButton {
         setTextVisible(pressed);
         startScaleAnimation(pressed);
     }
+
     /**
      *  显示按钮缩放动画
      */
@@ -191,6 +189,7 @@ public abstract class InstantButton {
     private int getTextWidth() {
         return mText == null ? 0 : (int) mTextPaint.measureText(mText);
     }
+
 
     //  获取字体高度
     private int getTextHeight() {

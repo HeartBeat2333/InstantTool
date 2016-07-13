@@ -4,7 +4,6 @@ import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Point;
 import android.graphics.Rect;
@@ -15,6 +14,7 @@ import android.os.Message;
 import android.os.SystemClock;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.LinearLayout;
@@ -32,12 +32,13 @@ public class InstantToolLayout extends LinearLayout {
 
     private Context mContext;
     private boolean isButtonsShown;
+    private boolean instantCloseEnable; // 手指抬起后是否及时收回
 
     private int mButtonRadius; // 按钮到点击中心的半径
     private int mCurrentBtnNum; // 当前按钮数量
     private int mAngleGap;  // 每个按钮间隔的角度
 
-    private int mBackgrounColor;
+    private int mBgColor;
     private int mButtonDpSize;
     private int mButtonPadding;
     private int mTextSize;
@@ -50,7 +51,6 @@ public class InstantToolLayout extends LinearLayout {
     private ArrayList<Box> mBoxPool = new ArrayList<>();
 
     private Drawable mCenterCircle;
-    private Paint mPaint;
     private Paint mBackgroundPaint;
 
     private float mProgress;
@@ -59,6 +59,7 @@ public class InstantToolLayout extends LinearLayout {
     private boolean isHandle;
     private Box mCurrentBox;
     private Handler mHandler;
+    private GestureDetector mGestureDetector;
 
     private class Box { // button容器
         public InstantButton button;
@@ -111,16 +112,12 @@ public class InstantToolLayout extends LinearLayout {
         init(context, attrs);
     }
 
-
     private void init(Context context, AttributeSet attrs) {
         mContext = context;
 
-        mPaint = new Paint();
-        mPaint.setColor(Color.RED);// 设置红色
-
-        mBackgrounColor = context.getResources().getColor(R.color.instanttool_bg);
+        mBgColor = context.getResources().getColor(R.color.instanttool_bg);
         mBackgroundPaint = new Paint();
-        mBackgroundPaint.setColor(mBackgrounColor);
+        mBackgroundPaint.setColor(mBgColor);
 
         mAlpha = 0.0f;
         TypedArray typedArray = mContext.obtainStyledAttributes(attrs, R.styleable.InstantToolLayout);
@@ -128,17 +125,19 @@ public class InstantToolLayout extends LinearLayout {
         mAngleGap = 180 / (MAX_BUTTON_NUM - 1);
         mCenterCircle = typedArray.getDrawable(R.styleable.InstantToolLayout_centerIcon);
         mCurrentBtnNum = typedArray.getInteger(R.styleable.InstantToolLayout_buttonNum, 0);
-        mButtonRadius = typedArray.getDimensionPixelSize(R.styleable.InstantToolLayout_radius, 0);
-        mButtonDpSize = typedArray.getDimensionPixelSize(R.styleable.InstantToolLayout_buttonSize, 0);
-        mButtonPadding = typedArray.getDimensionPixelSize(R.styleable.InstantToolLayout_buttonPadding, 0);
-        mTextSize = typedArray.getDimensionPixelSize(R.styleable.InstantToolLayout_textSize, 0);
-        mTextColor = typedArray.getColor(R.styleable.InstantToolLayout_textColor, 0);
+        mButtonRadius = typedArray.getDimensionPixelSize(R.styleable.InstantToolLayout_radius, Utils.dip2px(mContext, 90));
+        mButtonDpSize = typedArray.getDimensionPixelSize(R.styleable.InstantToolLayout_buttonSize, Utils.dip2px(mContext, 55));
+        mButtonPadding = typedArray.getDimensionPixelSize(R.styleable.InstantToolLayout_buttonPadding, Utils.dip2px(mContext, 7));
+        mTextSize = typedArray.getDimensionPixelSize(R.styleable.InstantToolLayout_textSize, Utils.dip2px(mContext, 18));
+        mTextColor = typedArray.getColor(R.styleable.InstantToolLayout_textColor, Utils.dip2px(mContext, 7));
 
         mCurrentBtnNum = Utils.clamp(mCurrentBtnNum, MIN_BUTTON_NUM, MAX_BUTTON_NUM);
 
         mCenterPoint = new Point();
         initBox();
         setWillNotDraw(false);
+
+        mGestureDetector = new GestureDetector(mContext, myGestureListener);
 
         mHandler = new Handler() {
             @Override
@@ -156,6 +155,14 @@ public class InstantToolLayout extends LinearLayout {
                 }
             }
         };
+    }
+
+    public boolean isInstantCloseEnalbe() {
+        return instantCloseEnable;
+    }
+
+    public void setInstantCloseEnalbe(boolean instantCloseEnable) {
+        this.instantCloseEnable = instantCloseEnable;
     }
 
     private void initBox() {
@@ -310,25 +317,13 @@ public class InstantToolLayout extends LinearLayout {
 
             if(anim != null && anim.getType() == ShowAnimation.HIDING) {
                 // 消失时往中心收缩
-//                canvas.setAlpha(mProgress);
                 canvas.translate(mCenterPoint.x, mCenterPoint.y);
                 canvas.scale(mProgress, mProgress);
                 canvas.translate(-mCenterPoint.x, -mCenterPoint.y);
             }
-
             drawCenterCircle(canvas);
-            if(mBoxPool.size() > 0) {
-                // 根据点击x位置判断显示层级， 防止弹出文字被遮挡
-                if(mCenterPoint.x < getWidth() / 2) {
-                    for(int i = 0; i < size(); i++) {
-                        drawButtons(canvas, i);
-                    }
-                } else {
-                    for(int i = size() -1; i >= 0; i--) {
-                        drawButtons(canvas, i);
-                    }
-                }
-            }
+            drawButtons(canvas);
+
             canvas.restore();
         }
 
@@ -336,7 +331,22 @@ public class InstantToolLayout extends LinearLayout {
             invalidate();
     }
 
-    private void drawButtons(Canvas canvas, int index) {
+    private void drawButtons(Canvas canvas) {
+        if(mBoxPool.size() > 0) {
+            // 根据点击x位置判断显示层级， 防止弹出文字被遮挡
+            if(mCenterPoint.x < getWidth() / 2) {
+                for(int i = 0; i < size(); i++) {
+                    drawButton(canvas, i);
+                }
+            } else {
+                for(int i = size() -1; i >= 0; i--) {
+                    drawButton(canvas, i);
+                }
+            }
+        }
+    }
+
+    private void drawButton(Canvas canvas, int index) {
         Box box = mBoxPool.get(index);
         if (box.button == null)
             return;
@@ -378,21 +388,41 @@ public class InstantToolLayout extends LinearLayout {
 
     // ---------------------------- Gesture --------------------------------------------
 
-    @Override
-    public boolean onInterceptTouchEvent(MotionEvent event) {
-        switch (event.getAction() & MotionEvent.ACTION_MASK) {
-            case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_CANCEL:
-            case MotionEvent.ACTION_POINTER_DOWN:
-                isHandle = false;
-                startHideAnimation();
-                break;
+    GestureDetector.OnGestureListener myGestureListener = new GestureDetector.OnGestureListener() {
+        @Override
+        public boolean onDown(MotionEvent e) {
+            return false;
         }
-        return isHandle ? true : super.onInterceptTouchEvent(event);
-    }
+
+        @Override
+        public void onShowPress(MotionEvent e) {
+        }
+
+        @Override
+        public boolean onSingleTapUp(MotionEvent e) {
+            return false;
+        }
+
+        @Override
+        public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+            return false;
+        }
+
+        @Override
+        public void onLongPress(MotionEvent e) {
+            showButtons(e);
+        }
+
+        @Override
+        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+            return false;
+        }
+    };
 
     @Override
-    public boolean onTouchEvent(MotionEvent event) {
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        Log.i(TAG, "dispatchTouchEvent action : " + event.getAction());
+        mGestureDetector.onTouchEvent(event);
         switch (event.getAction() & MotionEvent.ACTION_MASK) {
             case MotionEvent.ACTION_MOVE:
                 for (Box box : mBoxPool) {
@@ -411,16 +441,13 @@ public class InstantToolLayout extends LinearLayout {
                     }
                 }
                 break;
-            case MotionEvent.ACTION_DOWN:
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
             case MotionEvent.ACTION_POINTER_DOWN:
-                isHandle = false;
                 startHideAnimation();
-                mHandler.sendMessageDelayed(mHandler.obtainMessage(MSG_PICK_BUTTON), 500);
                 break;
         }
-        return super.onTouchEvent(event);
+        return isHandle ? true : super.dispatchTouchEvent(event);
     }
 
     // ---------------------------- Animation --------------------------------------------
@@ -436,6 +463,7 @@ public class InstantToolLayout extends LinearLayout {
     }
 
     public void startHideAnimation() {
+        isHandle = false;
         if (!isButtonsShown) return;
         if (mAnimation != null) {
             mAnimation.forceStop();
@@ -443,6 +471,8 @@ public class InstantToolLayout extends LinearLayout {
         mAnimation = new ShowAnimation(ShowAnimation.HIDING);
         mAnimation.start();
         invalidate();
+
+        mHandler.sendMessageDelayed(mHandler.obtainMessage(MSG_PICK_BUTTON), 500);
     }
 
     private class ShowAnimation extends Animation {
