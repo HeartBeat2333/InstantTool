@@ -242,7 +242,6 @@ public class InstantToolLayout extends LinearLayout {
         int startAngle = getStartAngle();
         int i = 0;
         for(Box box : mBoxPool) {
-            // TODO 初始化按钮状态
             box.button.setScale(1.0f);
             box.button.isPressed = false;
             // 设置目标矩形
@@ -298,9 +297,36 @@ public class InstantToolLayout extends LinearLayout {
     @Override
     public void draw(Canvas canvas) {
         super.draw(canvas);
-        long animTime = SystemClock.uptimeMillis();
+
         ShowAnimation anim = mAnimation;
+        boolean more = isMoreRender(anim);
+        if(isButtonsShown) {
+            renderBackground(canvas);
+
+            canvas.save(Canvas.MATRIX_SAVE_FLAG | Canvas.HAS_ALPHA_LAYER_SAVE_FLAG);
+            if(anim != null && anim.getType() == ShowAnimation.HIDING) {
+                // 消失时往中心收缩
+                canvas.translate(mCenterPoint.x, mCenterPoint.y);
+                canvas.scale(mProgress, mProgress);
+                canvas.translate(-mCenterPoint.x, -mCenterPoint.y);
+            }
+            drawCenterCircle(canvas);
+            drawButtons(canvas);
+            canvas.restore();
+        }
+
+        if (more)
+            invalidate();
+    }
+
+    /**
+     * 判断是否有动画需要刷新
+     * @param anim
+     * @return
+     */
+    private boolean isMoreRender(ShowAnimation anim) {
         boolean more = false;
+        long animTime = SystemClock.uptimeMillis();
         if (anim != null) {
             more |= anim.calculate(animTime);
             if(!anim.isActive()) {
@@ -311,24 +337,7 @@ public class InstantToolLayout extends LinearLayout {
             }
             mProgress = anim.get();
         }
-        if(isButtonsShown) {
-            renderBackground(canvas);
-            canvas.save(Canvas.MATRIX_SAVE_FLAG | Canvas.HAS_ALPHA_LAYER_SAVE_FLAG);
-
-            if(anim != null && anim.getType() == ShowAnimation.HIDING) {
-                // 消失时往中心收缩
-                canvas.translate(mCenterPoint.x, mCenterPoint.y);
-                canvas.scale(mProgress, mProgress);
-                canvas.translate(-mCenterPoint.x, -mCenterPoint.y);
-            }
-            drawCenterCircle(canvas);
-            drawButtons(canvas);
-
-            canvas.restore();
-        }
-
-        if (more)
-            invalidate();
+        return more;
     }
 
     private void drawButtons(Canvas canvas) {
@@ -374,7 +383,6 @@ public class InstantToolLayout extends LinearLayout {
      */
     private void drawCenterCircle(Canvas canvas) {
         int x , y , w, h;
-        x = y = 0;
         w = mCenterCircle.getIntrinsicWidth();
         h = mCenterCircle.getIntrinsicHeight();
         canvas.save(Canvas.HAS_ALPHA_LAYER_SAVE_FLAG);
@@ -471,7 +479,7 @@ public class InstantToolLayout extends LinearLayout {
         mAnimation.start();
         invalidate();
 
-        mHandler.sendMessageDelayed(mHandler.obtainMessage(MSG_PICK_BUTTON), 500);
+        mHandler.sendMessageDelayed(mHandler.obtainMessage(MSG_PICK_BUTTON), 300);
     }
 
     private class ShowAnimation extends Animation {

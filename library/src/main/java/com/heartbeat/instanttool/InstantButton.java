@@ -94,21 +94,11 @@ public abstract class InstantButton {
     }
 
     protected void render(Canvas canvas, float progress) {
-        long animTime = SystemClock.uptimeMillis();
         FloatAnimation anim = mAnimation;
-        boolean more = false;
-        if (anim != null) {
-            more |= anim.calculate(animTime);
-            mScale = 1 + (float) mPadding * 2 / getWidth() * anim.get();
-            if(!anim.isActive()) {
-                mAnimation = null;
-                more |= false;
-            }
-        }
+        boolean more = isMoreRender(anim);
 
         canvas.save(Canvas.MATRIX_SAVE_FLAG | Canvas.HAS_ALPHA_LAYER_SAVE_FLAG);
-
-        // 动画
+        // 按钮缩放
         canvas.translate(mBounds.centerX(), mBounds.centerY());
         canvas.scale(mScale, mScale);
         canvas.translate(-mBounds.centerX(), -mBounds.centerY());
@@ -124,10 +114,29 @@ public abstract class InstantButton {
         mIconResource.draw(canvas);
 
         drawText(canvas, anim);
-
         canvas.restore();
+
         if (more)
             invalidateButton();
+    }
+
+    /**
+     * 判断是否有动画需要刷新
+     * @param anim
+     * @return
+     */
+    private boolean isMoreRender(FloatAnimation anim) {
+        boolean more = false;
+        long animTime = SystemClock.uptimeMillis();
+        if (anim != null) {
+            more |= anim.calculate(animTime);
+            mScale = 1 + (float) mPadding * 2 / getWidth() * anim.get();
+            if(!anim.isActive()) {
+                mAnimation = null;
+                more |= false;
+            }
+        }
+        return more;
     }
 
     private void drawText(Canvas canvas, FloatAnimation anim) {
