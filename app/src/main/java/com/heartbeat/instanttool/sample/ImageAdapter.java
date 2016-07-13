@@ -18,7 +18,6 @@ public class ImageAdapter extends RecyclerView.Adapter {
 
     private List<Integer> mItems;
     private Context mContext;
-    private int currentId;
 
     public ImageAdapter(Context context) {
         mContext = context;
